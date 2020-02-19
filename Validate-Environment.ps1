@@ -19,8 +19,8 @@ function Out-Popup($text,$title,$buttonsArr) {
 }
 
 
-# Check that an internal file server is accessable
-$InternalFileServerName = "server.local.domain"
+# Check that an internal file server is accessible
+
 try{Resolve-DnsName -Name $InternalFileServerName -ErrorAction Stop}catch{    Out-Popup -text "Failed to connect to internal server. Are you connected to the VPN?" -title $ScriptTitle -buttonsArr @("OK")
     return $false
 }
