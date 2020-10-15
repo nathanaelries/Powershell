@@ -66,7 +66,7 @@ function Find-EcaptureProjects{
 
         else {
             $DatabaseInstanceNameArray = $DatabaseInstanceNameArray + ($Results)
-            $TempOutputObj += New-Object -TypeName psobject -Property @{ClientName=$null;ClientDatabase=$null;ServerInstance=$_.ServerInstance; ConfigDB=$_.PEDDConfig; Attached=$true}
+            $TempOutputObj += New-Object -TypeName psobject -Property @{ClientName='ConfigDB';ClientDatabase='ConfigDB';ServerInstance=$_.ServerInstance; ConfigDB=$_.PEDDConfig}
             $OutputObj += $TempOutputObj
             Write-Host ("Potential ecapture configuration database found: "+$_.PEDDConfig+" on "+$_.ServerInstance)}
     })
