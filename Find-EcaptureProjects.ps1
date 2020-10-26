@@ -1,96 +1,81 @@
-function Attach-MDFsLDFs {
+function Find-EcaptureProjects{
 <#
     .SYNOPSIS
-        Attach-MDFsLDFs is a powershell function to attach all unattached mdf and log files
+        Find-EcaptureProjects is a powershell function to assist in finding ecapture databases.
 
     .DESCRIPTION
-        Attach-MDFsLDFs is a powershell function to attach all unattached mdf and log files
-        It has two required parameters (switches): -SQLServerInstance -DatabaseDir
-        And one optional parameter, Credential. Find the details of the parameters below.
+        Find-EcaptureProjects is a powershell function to assist in finding ecapture databases.
+        It has one required parameters (switches): -SQLServers
+        And two optional parameters, ProjectName and Credential. Find the details of the parameters below.
 
-    .PARAMETER SQLServerInstance
-        Specifies the computername and instance of SQL where databases will be attached.
+    .PARAMETER SQLServers
+        Specifies the computername of the SQL server(s) which should be hosting the project configuration databases.
 
-    .Parameter DatabaseDir
-        Specifies the parent dir containing the database and log files.
-        
+    .Parameter ProjectName
+        Specifies the name of the project to search for.
+
     .Parameter Credential
         Specify the credenial to run the sql commands as a different user.
 
     .EXAMPLE
-        PS C:\> Attach-MDFsInDir server\instance X:\DB_File_Dir\
+        PS C:\> Find-EcaptureProjects server1,server2,server3 PROJ0001
+
 #>
     [CmdletBinding()]
     param(
-    [Parameter(Position = 0,Mandatory=$true)][string]$SQLServerInstance,
-    [Parameter(Mandatory=$true)][string]$DatabaseDir,
+    [Parameter(Position = 0,Mandatory=$true)][string[]]$SQLServers,
+    [Parameter(Mandatory=$false)][string]$ProjectName,
     [ValidateNotNull()]
     [System.Management.Automation.PSCredential]
     [System.Management.Automation.Credential()]
     $Credential = [System.Management.Automation.PSCredential]::Empty 
     )
-    
-    # Get all the attached databases
-    if($Credential -ne [System.Management.Automation.PSCredential]::Empty) {
-        $Attached = Get-SqlDatabase -ServerInstance $SQLServerInstance -Credential $Credential
-    }else{$Attached = Get-SqlDatabase -ServerInstance $SQLServerInstance }
 
-    # Find all mdf and ldf in directory
-    $MDFs = get-childitem -Recurse $DatabaseDir *.mdf
-    $LDFs = get-childitem -Recurse $DatabaseDir *.ldf    
-    
-    foreach ($item in $MDFs){ 
-        # Error Variable
-        [bool]$ErrorExists = $false 
+    # Define array store the information of all of the  project databases into an array by running the $DatabaseInstanceNameQuery
+    $DatabaseInstanceNameArray = @()
 
-        # Output current mdf file name
-        $Item.name
+    # Define the output object array to store the results
+    $OutputObj = @()
 
-        # Check if already attached
-        if($item.BaseName -in $Attached.Name){
-                Write-Warning "This database already exists on the server" 
-                $ErrorExists = $true 
-        }
-        
-        if ($ErrorExists -eq $false){
+    # Define query for getting information for each venio project database
+    $DatabaseInstanceNameQuery = 'SELECT ClientName, ClientDatabase, @@servername as ServerInstance, DB_NAME() AS [ConfigDB] FROM [dbo].[Clients]'
 
-        # Check if file is locked
-        try {
-            
-            [IO.File]::OpenWrite($item.FullName).close();
-
-        } catch { 
-                Write-Warning "MDF was not able to be read. It is most likely already mounted or in use by another application" 
-                $ErrorExists = $true 
-        }
-        }
-            
-        if ($ErrorExists -eq $false){ 
-
-        # Make sure the PSSnapin is available
-        Add-PSSnapin SqlServerCmdletSnapin* -ErrorAction SilentlyContinue
-        If (!$?) {Import-Module SQLPS -WarningAction SilentlyContinue}
-        If (!$?) {"Error loading Microsoft SQL Server PowerShell module. Please check if it is installed."; Exit}
-        
-        # Set the dbname, mdf fullname, and ldf fullname
-        $DBName = $item.BaseName
-        $mdfFilename = $item.fullname 
-        $ldfFilename = ($LDFs.Where{$_.BaseName -like ($item.BaseName+"*")}).FullName
-
-# Generate SQL query to attach databases.
-$attachSQLCMD = @"
-USE [master]
-
-CREATE DATABASE [$DBName] ON (FILENAME = '$mdfFilename'),(FILENAME = '$ldfFilename') for ATTACH
-GO
-"@ 
-        #Run the generated query
+    # Find all databases on the server with "Config" in the database name
+    $ConfigInstanceName = @($SQLServers | Foreach-Object {(Get-ChildItem -Path "SQLSERVER:\SQL\$_").Name}).ForEach({
         if($Credential -ne [System.Management.Automation.PSCredential]::Empty) {
-        Invoke-Sqlcmd $attachSQLCMD -QueryTimeout 3600 -ServerInstance $SQLServerInstance -Credential $Credential
-        }else{Invoke-Sqlcmd $attachSQLCMD -QueryTimeout 3600 -ServerInstance $SQLServerInstance}
-
-        Write-Host -ForegroundColor Green "Database Attached"
+            Invoke-Sqlcmd -Query "Select @@servername as ServerInstance, name as PEDDConfig from Sys.Databases WHERE name not like '%Client00%' and name like '%config%'" -ServerInstance $_ -Credential $Credential
         }
-    }
-    return 
-} 
+        else {
+            Invoke-Sqlcmd -Query "Select @@servername as ServerInstance, name as PEDDConfig from Sys.Databases WHERE name not like '%Client00%' and name like '%config%'" -ServerInstance $_
+        }
+    })
+
+    # Find all of the project databases listed in each of the PEDDConfig databases
+    $ConfigInstanceName.ForEach({
+            
+        # Define the temp object to add to the output object array
+        $TempOutputObj = @()
+
+        if($Credential -ne [System.Management.Automation.PSCredential]::Empty) {
+            $Results = Invoke-Sqlcmd -Query $DatabaseInstanceNameQuery -ServerInstance $_.ServerInstance -Database $_.PEDDConfig -ErrorAction SilentlyContinue -ErrorVariable NoClientsTable -Credential $Credential
+        }else{
+            $Results = Invoke-Sqlcmd -Query $DatabaseInstanceNameQuery -ServerInstance $_.ServerInstance -Database $_.PEDDConfig -ErrorAction SilentlyContinue -ErrorVariable NoClientsTable
+        }
+        
+        if ($NoClientsTable){<# Nothing to do here, database Does not appear to contain a clients table"#>}
+
+        else {
+            $DatabaseInstanceNameArray = $DatabaseInstanceNameArray + ($Results)
+            $TempOutputObj += New-Object -TypeName psobject -Property @{ClientName='ConfigDB';ClientDatabase='ConfigDB';ServerInstance=$_.ServerInstance; ConfigDB=$_.PEDDConfig}
+            $OutputObj += $TempOutputObj
+            Write-Host ("Potential ecapture configuration database found: "+$_.PEDDConfig+" on "+$_.ServerInstance)}
+    })
+
+    if ($ProjectName){
+        $DatabaseInstanceNameMatches = $DatabaseInstanceNameArray.Where({$_.ClientName -like "*$ProjectName*"})
+    }else{$DatabaseInstanceNameMatches=$DatabaseInstanceNameArray}
+
+    $OutputObj += $DatabaseInstanceNameMatches
+
+    Return $OutputObj
+}
