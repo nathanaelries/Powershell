@@ -30,22 +30,31 @@ function Attach-MDFsLDFs {
     $Credential = [System.Management.Automation.PSCredential]::Empty 
     )
     
-    $Attached = Get-SqlDatabase -ServerInstance $SQLServerInstance 
+    # Get all the attached databases
+    if($Credential -ne [System.Management.Automation.PSCredential]::Empty) {
+        $Attached = Get-SqlDatabase -ServerInstance $SQLServerInstance -Credential $Credential
+    }else{$Attached = Get-SqlDatabase -ServerInstance $SQLServerInstance }
 
-    $MDFs = get-childitem -Recurse $DatabaseDir *.mdf 
+    # Find all mdf and ldf in directory
+    $MDFs = get-childitem -Recurse $DatabaseDir *.mdf
     $LDFs = get-childitem -Recurse $DatabaseDir *.ldf    
- 
+    
     foreach ($item in $MDFs){ 
+        # Error Variable
         [bool]$ErrorExists = $false 
+
+        # Output current mdf file name
         $Item.name
-        
+
+        # Check if already attached
         if($item.BaseName -in $Attached.Name){
                 Write-Warning "This database already exists on the server" 
                 $ErrorExists = $true 
         }
-    
-    if ($ErrorExists -eq $false){
+        
+        if ($ErrorExists -eq $false){
 
+        # Check if file is locked
         try {
             
             [IO.File]::OpenWrite($item.FullName).close();
@@ -54,32 +63,34 @@ function Attach-MDFsLDFs {
                 Write-Warning "MDF was not able to be read. It is most likely already mounted or in use by another application" 
                 $ErrorExists = $true 
         }
-    }
+        }
             
-    if ($ErrorExists -eq $false){ 
+        if ($ErrorExists -eq $false){ 
+
+        # Make sure the PSSnapin is available
         Add-PSSnapin SqlServerCmdletSnapin* -ErrorAction SilentlyContinue
         If (!$?) {Import-Module SQLPS -WarningAction SilentlyContinue}
-
         If (!$?) {"Error loading Microsoft SQL Server PowerShell module. Please check if it is installed."; Exit}
         
+        # Set the dbname, mdf fullname, and ldf fullname
         $DBName = $item.BaseName
-        $DbLocation = new-object System.Collections.Specialized.StringCollection 
         $mdfFilename = $item.fullname 
         $ldfFilename = ($LDFs.Where{$_.BaseName -like ($item.BaseName+"*")}).FullName
 
+# Generate SQL query to attach databases.
 $attachSQLCMD = @"
 USE [master]
 
 CREATE DATABASE [$DBName] ON (FILENAME = '$mdfFilename'),(FILENAME = '$ldfFilename') for ATTACH
 GO
 "@ 
-        Invoke-Sqlcmd $attachSQLCMD -QueryTimeout 3600 -ServerInstance $SQLServerInstance
+        #Run the generated query
+        if($Credential -ne [System.Management.Automation.PSCredential]::Empty) {
+        Invoke-Sqlcmd $attachSQLCMD -QueryTimeout 3600 -ServerInstance $SQLServerInstance -Credential $Credential
+        }else{Invoke-Sqlcmd $attachSQLCMD -QueryTimeout 3600 -ServerInstance $SQLServerInstance}
+
         Write-Host -ForegroundColor Green "Database Attached"
-
-
+        }
     }
-}
-
-    
     return 
 } 
