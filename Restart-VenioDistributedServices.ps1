@@ -51,7 +51,9 @@ function Restart-VenioDistributedServices{
             }
             if ($NoProjectSetupTable){<# Nothing to do here, database Does not appear to contain a ProjectSetup table"#>
             } else {
-                $tbl_ds_ServerDetail = Invoke-Sqlcmd -ServerInstance $Results.ServerInstance -Database $Results.PCD -Query 'SELECT DISTINCT [Hostname],[Application] FROM [tbl_sys_ComponentVersionInfo] with (NOLOCK)' -ErrorAction SilentlyContinue -ErrorVariable NoServerDetailTable -QueryTimeout 65534
+                foreach($Result in $Results){
+                $tbl_ds_ServerDetail = $null
+                $tbl_ds_ServerDetail = Invoke-Sqlcmd -ServerInstance $Result.ServerInstance -Database $Result.PCD -Query 'SELECT DISTINCT [Hostname],[Application] FROM [VenioPCD].[dbo].[tbl_sys_ComponentVersionInfo] with (NOLOCK) where [LoggedDate]  >=  (getdate()-366)' -ErrorAction SilentlyContinue -ErrorVariable NoServerDetailTable -QueryTimeout 65534
             }}
 
             if($tbl_ds_ServerDetail.Hostname -contains $VenioRDS){
@@ -120,7 +122,7 @@ function Restart-VenioDistributedServices{
             }
         }
     }
-}
+}}
 
 
 
