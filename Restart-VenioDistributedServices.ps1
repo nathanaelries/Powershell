@@ -76,7 +76,7 @@ function Restart-VenioDistributedServices{
                 Write-warning "Stopping Venio Distributed Service on $Server"
                 (get-service -ComputerName $Server -Name 'VenioDistributedService').Stop()
                 (get-service -ComputerName $Server -Name 'VenioDistributedService').WaitForStatus('Stopped')
-                (get-service -ComputerName $Server -Name 'VenioDistributedService').Status
+                Write-Host (get-service -ComputerName $Server -Name 'VenioDistributedService').Status
                 # 1. close the distributed service executable
                 Write-Warning ("Closing VenioDistributedService processes on "+$Server+"")
                 $proc = Get-Process -ComputerName $Server
@@ -87,7 +87,7 @@ function Restart-VenioDistributedServices{
                 }# 3. Start Distributed Service
                 (get-service -ComputerName $Server -Name 'VenioDistributedService').Start()
                 (get-service -ComputerName $Server -Name 'VenioDistributedService').WaitForStatus('Running')
-                (get-service -ComputerName $Server -Name 'VenioDistributedService').Status
+                Write-Host (get-service -ComputerName $Server -Name 'VenioDistributedService').Status
                 Write-Host "SUCCESS: Venio Distributed Service is now running on $Server" -BackgroundColor Green -ForegroundColor Black
 
 
@@ -96,18 +96,18 @@ function Restart-VenioDistributedServices{
                 Write-warning "Stopping Venio Search Service on $Server"
                 (get-service -ComputerName $Server -Name 'VenioSearchService').Stop()
                 (get-service -ComputerName $Server -Name 'VenioSearchService').WaitForStatus('Stopped')
-                (get-service -ComputerName $Server -Name 'VenioSearchService').Status
+                Write-Host (get-service -ComputerName $Server -Name 'VenioSearchService').Status
                 # 1. close the distributed service executable
-                Write-Warning ("Closing VenioDistributedService processes on "+$Server+"")
+                Write-Warning ("Closing VenioSearchService processes on "+$Server+"")
                 $proc = Get-Process -ComputerName $Server
-                while ($proc.Name -contains 'VenioDistributedService'){
-                (Get-WmiObject Win32_Process -ComputerName $Server | ?{ $_.ProcessName -like "*DistributedService*" }).Terminate()
+                while ($proc.Name -contains 'VenioSearchService'){
+                (Get-WmiObject Win32_Process -ComputerName $Server | ?{ $_.ProcessName -like "*VenioSearch*" }).Terminate()
                 Start-Sleep -Seconds 1
                 $proc = Get-Process -ComputerName $Server
                 #start the search service
                 }(get-service -ComputerName $Server -Name 'VenioSearchService').Start()
                 (get-service -ComputerName $Server -Name 'VenioSearchService').WaitForStatus('Running')
-                (get-service -ComputerName $Server -Name 'VenioSearchService').Status
+                Write-Host (get-service -ComputerName $Server -Name 'VenioSearchService').Status
                 Write-Host "SUCCESS: Venio Search Service is now running on $Server $OFS" -BackgroundColor Green -ForegroundColor Black
 
                 }if ($FPRProcExists){<# Do stuff on the RDS #>}                
