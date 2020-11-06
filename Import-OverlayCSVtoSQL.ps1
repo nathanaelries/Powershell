@@ -1,11 +1,6 @@
-<#
-# This is a work in progress. The intention is to load a csv and overlay the values into an existing sql database, overwriting the sql values within.
-#
->#
-
-$ServerInstance = ""
-$Database = ""
-$LoadfilePath = ""
+$ServerInstance = "LEGUS-SQL-MI01\INSTANCEA"
+$Database = "prj_SCOx0001_SGSS_MINDSEYE_1382"
+$LoadfilePath = "C:\Users\nd-admin\Desktop\test.csv"
 
 $ImportedLoadfile = Import-Csv -Path $LoadfilePath -Delimiter "`t"
 
@@ -58,13 +53,17 @@ $SQLJoinsPlaceholder +=  ("F001.TABLE_NAME = F"+'{0:d3}' -f $X+".TABLE_NAME ")
 $SQLValuePlaceholder +=  ("F"+'{0:d3}' -f $X+++".COLUMN_NAME = '$LFField' ")
 }
 
+# Combine select from join and where into single SQL query
 $SQLSelect = $SQLSelect + ($SQLFieldPlaceholder -join ", $OFS")
 $SQLFrom = $SQLFrom + ($SQLTablePlaceholder -join ", $OFS")
 $SQLJoins = $SQLJoins + (($SQLJoinsPlaceholder | Select -Skip 1) -join "AND $OFS")
 $SQLWhere = $SQLWhere + ($SQLValuePlaceholder -join "AND $OFS")
-
 $QUERY = $SQLSelect + $OFS + $SQLFrom + $OFS + $SQLJoins + $OFS + $SQLWhere
 
+# Store the results
 $PotentialTables = Invoke-Sqlcmd -ServerInstance $ServerInstance -Database $Database -Query $QUERY -QueryTimeout 65524
 
-$PotentialTables.
+# Ensure tables and fields match up
+
+# Generate the update query
+
