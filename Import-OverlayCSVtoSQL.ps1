@@ -1,6 +1,6 @@
-$ServerInstance = "LEGUS-SQL-MI01\INSTANCEA"
-$Database = "prj_SCOx0001_SGSS_MINDSEYE_1382"
-$LoadfilePath = "C:\Users\nd-admin\Desktop\test.csv"
+$ServerInstance = ""
+$Database = ""
+$LoadfilePath = ""
 
 $ImportedLoadfile = Import-Csv -Path $LoadfilePath -Delimiter "`t"
 
