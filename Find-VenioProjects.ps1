@@ -72,7 +72,7 @@ function Find-VenioProjects{
     })
 
     if ($ProjectName){
-        $DatabaseInstanceNameMatches = $DatabaseInstanceNameArray.Where({$_.ClientName -like "*$ProjectName*"})
+        $DatabaseInstanceNameMatches = $DatabaseInstanceNameArray.Where({$_.DatabaseInstanceName -like "*$ProjectName*"})
     }else{$DatabaseInstanceNameMatches=$DatabaseInstanceNameArray}
 
     $OutputObj += $DatabaseInstanceNameMatches
