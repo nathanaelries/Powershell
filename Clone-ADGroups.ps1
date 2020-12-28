@@ -27,8 +27,9 @@ function Clone-ADGroups{
     )
     Import-Module ActiveDirectory
     if($Credential -ne [System.Management.Automation.PSCredential]::Empty) {
-        Get-ADUser -identity $CloneFrom -Properties memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members $CloneInto -Credential $Credential -Passthru | Format-Table -Property Name,GroupCategory,GroupScope,DistinguishedName -AutoSize
+        $Results = Get-ADUser -identity $CloneFrom -Properties memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members $CloneInto -Credential $Credential -Passthru | Format-Table -Property Name,GroupCategory,GroupScope,DistinguishedName -AutoSize
     } else {
-        Get-ADUser -identity $CloneFrom -Properties memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members $CloneInto | Format-Table -Property Name,GroupCategory,GroupScope,DistinguishedName -AutoSize
+        $Results = Get-ADUser -identity $CloneFrom -Properties memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members $CloneInto | Format-Table -Property Name,GroupCategory,GroupScope,DistinguishedName -AutoSize
     }
+    Return $Results
 }
