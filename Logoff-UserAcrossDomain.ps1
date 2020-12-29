@@ -5,11 +5,13 @@ function Logoff-UserAcrossDomain{
     .DESCRIPTION
         Logoff-UserAcrossDomain is a powershell function to logout a specified user from all computers accros a domain.
         It has one required parameter (switch): -ADLogonName
-        And one optional parameter, -Credential. Find the details of the parameters below.
+        And two optional parameters, -Credential and -ExcludeComputer. Find the details of the parameters below.
     .PARAMETER ADLogonName
         Specifies the AD user logon name of the AD user to logout.
     .Parameter Credential
         Specify the credenial to run the AD commands as a different user.
+    .Parameter -Exclude
+        Specify computer(s) to exclude from logging off (example: -Exclude $env:COMPUTERNAME)
     .EXAMPLE
         PS C:\> Logoff-UserAcrossDomain -ADLogonName ALICE -Credential (Get-Credential)
     #>
@@ -17,6 +19,7 @@ function Logoff-UserAcrossDomain{
     [CmdletBinding()]
     param(
     [Parameter(Position = 0,Mandatory=$true)][string]$ADLogonName,
+    [Parameter(Position = 1,Mandatory=$false)][string[]]$Exclude,
     [ValidateNotNull()]
     [System.Management.Automation.PSCredential]
     [System.Management.Automation.Credential()]
@@ -35,8 +38,10 @@ function Logoff-UserAcrossDomain{
     Select-Object -ExpandProperty Name
     }
 
-    # Remove current computer from list
-    $Computers.RemoveAt($Computers.IndexOf($Computers.where({$_ -eq $env:COMPUTERNAME})))
+    # Remove excluded computer(s) from list
+    foreach($computer in $exclude){
+    $Computers.RemoveAt($Computers.IndexOf($Computers.where({$_ -eq $computer})))
+    }
 
     # Create Error Log Array
     $ErrorLog = @()
