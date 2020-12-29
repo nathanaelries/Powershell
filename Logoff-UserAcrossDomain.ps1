@@ -12,6 +12,7 @@ function Logoff-UserAcrossDomain{
         Specify the credenial to run the AD commands as a different user.
     .Parameter -Exclude
         Specify computer(s) to exclude from logging off (example: -Exclude $env:COMPUTERNAME)
+        You can specify multiple computer names seperated by commas (example: -Exclude $env:COMPUTERNAME,COMP-01,COMPUTER2)
     .EXAMPLE
         PS C:\> Logoff-UserAcrossDomain -ADLogonName ALICE -Credential (Get-Credential)
     #>
