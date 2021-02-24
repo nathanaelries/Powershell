@@ -10,11 +10,10 @@
         Specifies the AD user logon name of the AD user who has been experiencing account lockouts
     .Parameter Credential
         Specify the credenial to run the AD commands as a different user.
-    .Parameter -Exclude
-        Specify computer(s) to exclude from logging off (example: -Exclude $env:COMPUTERNAME)
-        You can specify multiple computer names seperated by commas (example: -Exclude $env:COMPUTERNAME,COMP-01,COMPUTER2)
+    .Parameter -StartTime
+        Specify how many days to go back into the logs on the domain controller
     .EXAMPLE
-        PS C:\> Logoff-UserAcrossDomain -ADLogonName ALICE -Credential (Get-Credential)
+        PS C:\> Get-LockedOutUSer -Username ALICE -Credential (Get-Credential) -StartTime ((Get-Date).AddDays(-7))
     #>
 
     [CmdletBinding()]
