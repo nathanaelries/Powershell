@@ -4,6 +4,8 @@
         Get-LockedOutUSer is a powershell function to try to diagnose account lockouts for specific users.
     .DESCRIPTION
         Get-LockedOutUSer is a powershell function to try to diagnose account lockouts for specific users.
+        It finds all of the domain controllers, then checks each domain controller event log for 
+        failed login events (id:4740) under the event log's security log section.
         It has one required parameter (switch): -Username
         And two optional parameters, -Credential 
     .PARAMETER Username
@@ -33,6 +35,7 @@ $DomainControllers = [System.DirectoryServices.ActiveDirectory.Forest]::GetCurre
 foreach($DC in $DomainControllers){
 Write-host ("checking "+$DC.name)
 Invoke-Command -ComputerName ($DC.name) {
+     #Check the domain controller event log for failed logins under the security log.
     Get-WinEvent -FilterHashtable @{LogName='Security';Id=4740;StartTime=$Using:StartTime} |
     Where-Object {$_.Properties[0].Value -like "$Using:UserName"} |
     Select-Object -Property TimeCreated,
