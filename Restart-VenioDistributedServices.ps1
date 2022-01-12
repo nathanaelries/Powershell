@@ -33,13 +33,15 @@ function Restart-VenioDistributedServices{
     # Define array store the information of all of the  project databases into an array by running the $DatabaseInstanceNameQuery
     $DatabaseInstanceNameArray = @()
 
+    $tbl_ds_ServerDetail = @()
+
     # Define the output object array to store the results
     $OutputObj = @()
 
     # Define query for getting information for each venio project database
     $DatabaseInstanceNameQuery = 'SELECT ProjectName, DatabaseInstanceName, @@servername as ServerInstance, DB_NAME() AS [PCD] FROM [dbo].[tbl_pj_ProjectSetup]'
        
-    # Find all databases on the server with "PCD" in the database name
+    # Find all databases on the server(s) with "PCD" in the database name
     $PCDInstanceName = Foreach($Server in $SQLServers){
         (Get-WmiObject -Query "select * from win32_service where PathName like '%%sqlservr.exe%%'" -ComputerName $Server).foreach{
             $_ | Add-Member -NotePropertyName Server -NotePropertyValue $Server
@@ -51,80 +53,92 @@ function Restart-VenioDistributedServices{
             }
             if ($NoProjectSetupTable){<# Nothing to do here, database Does not appear to contain a ProjectSetup table"#>
             } else {
-                foreach($Result in $Results){
-                $tbl_ds_ServerDetail = $null
-                $tbl_ds_ServerDetail = Invoke-Sqlcmd -ServerInstance $Result.ServerInstance -Database $Result.PCD -Query 'SELECT DISTINCT [Hostname],[Application] FROM [VenioPCD].[dbo].[tbl_sys_ComponentVersionInfo] with (NOLOCK) where [LoggedDate]  >=  (getdate()-366)' -ErrorAction SilentlyContinue -ErrorVariable NoServerDetailTable -QueryTimeout 65534
-            }}
-
-            if($tbl_ds_ServerDetail.Hostname -contains $VenioRDS){
-
-            # Foreach distributed server in the environment
-            foreach ($Server in $tbl_ds_ServerDetail.Hostname){
-
-                # Check for existence of the venio search service
-                $SearchServiceExists = $false
-                $SearchServiceExists = (get-service -ComputerName $Server -Name 'VenioSearchService' -ErrorAction SilentlyContinue)
-
-                # Check for existence of the venio Distributed service
-                $DistributedServiceExists = $false
-                $DistributedServiceExists = (get-service -ComputerName $Server -Name 'VenioDistributedService' -ErrorAction SilentlyContinue)
                 
-                # Check for existence of the venio FPR 
-                $FPRProcExists = $false
-                $FPRProcExists = (Get-WmiObject Win32_Process -ComputerName $Server -ErrorAction SilentlyContinue | ?{ $_.ProcessName -like "*FPR*" }-ErrorAction SilentlyContinue) 
+                # Find all workers in each PCD
+                foreach($Result in $Results){
+                $temp_tbl_ds_ServerDetail = $null
+                $temp_tbl_ds_ServerDetail = Invoke-Sqlcmd -ServerInstance $Result.ServerInstance -Database $Result.PCD -Query 'SELECT DISTINCT [Hostname],[Application] FROM [tbl_sys_ComponentVersionInfo] with (NOLOCK) where [LoggedDate]  >=  (getdate()-366)' -ErrorAction SilentlyContinue -ErrorVariable NoServerDetailTable -QueryTimeout 65534
+                # only add server details for environment matching the RDS specified by the user 
+            if($temp_tbl_ds_ServerDetail.Hostname -contains $VenioRDS){$tbl_ds_ServerDetail += $temp_tbl_ds_ServerDetail}
+            }}}}
+                   
+    # Output the unique names of the RDS and workers found
+    $tbl_ds_ServerDetail_Hostname = ($tbl_ds_ServerDetail.Hostname | Sort-Object -Unique)
+    Write-Host $tbl_ds_ServerDetail_Hostname
+    
+    workflow Workflow-VenioServers {
 
-                # Check for existence of the venio search service, and stop if found
-                if ($DistributedServiceExists){
-                    Write-warning "Stopping Venio Distributed Service on $Server"
-                    (get-service -ComputerName $Server -Name 'VenioDistributedService').Stop()
-                    (get-service -ComputerName $Server -Name 'VenioDistributedService').WaitForStatus('Stopped')
-                    Write-Host (get-service -ComputerName $Server -Name 'VenioDistributedService').Status
-                    # 1. close the distributed service executable
-                    Write-Warning ("Closing VenioDistributedService processes on "+$Server+"")
-                    $proc = Get-Process -ComputerName $Server
-                    while ($proc.Name -contains 'VenioDistributedService'){
-                    (Get-WmiObject Win32_Process -ComputerName $Server | ?{ $_.ProcessName -like "*DistributedService*" }).Terminate()
+    param ([string[]]$tbl_ds_ServerDetail_Hostname)
+
+    # Foreach unique computer name in the ServerDetail table
+    foreach -parallel ($Server in $tbl_ds_ServerDetail_Hostname){
+
+        # Check for existence of the venio search service
+        $SearchServiceExists = $false
+        $SearchServiceExists = (get-service -ComputerName $Server -Name 'VenioSearchService' -ErrorAction SilentlyContinue)
+
+        # Check for existence of the venio Distributed service
+        $DistributedServiceExists = $false
+        $DistributedServiceExists = (get-service -ComputerName $Server -Name 'VenioDistributedService' -ErrorAction SilentlyContinue)
+                
+        # Check for existence of the venio FPR 
+        $FPRProcExists = $false
+        $FPRProcExists = (Get-WmiObject Win32_Process -ComputerName $Server -ErrorAction SilentlyContinue | ?{ $_.ProcessName -like "*FPR*" }-ErrorAction SilentlyContinue) 
+
+        # Check for existence of the venio search service, and stop if found
+        if ($DistributedServiceExists){
+            "Distributed Service Detected on $Server"
+            
+            InlineScript {
+                Write-Host "$Using:Server VenioDistributedService [STOPPING]"
+                (get-service -ComputerName $Using:Server -Name 'VenioDistributedService').Stop()
+                (get-service -ComputerName $Using:Server -Name 'VenioDistributedService').WaitForStatus('Stopped')
+                Write-Host "$Using:Server VenioDistributedService [STOPPED]"
+                # 1. close the distributed service executable
+                $proc = (Get-WmiObject Win32_Process -ComputerName $Using:Server)
+                while ($proc.Name -contains 'VenioDistributedService'){
+                    (Get-WmiObject Win32_Process -ComputerName $Using:Server | ?{ $_.ProcessName -like "*DistributedService*" }).Terminate()
                     Start-Sleep -Seconds 1
-                    $proc = Get-Process -ComputerName $Server               
-                    }Write-host 'Closed'
-                    # 3. Start Distributed Service
-                    write-warning ("Starting VenioDistributedService on "+$Server+"")
-                    (get-service -ComputerName $Server -Name 'VenioDistributedService').Start()
-                    (get-service -ComputerName $Server -Name 'VenioDistributedService').WaitForStatus('Running')
-                    Write-Host (get-service -ComputerName $Server -Name 'VenioDistributedService').Status
-                    Write-Host "SUCCESS: Venio Distributed Service is now running on $Server" -BackgroundColor Green -ForegroundColor Black
+                    $proc = (Get-WmiObject Win32_Process -ComputerName $Using:Server)             
                 }
-
-                # Check for existence of the venio search service, and stop if found
-                if ($SearchServiceExists){
-                    Write-warning "Stopping Venio Search Service on $Server"
-                    (get-service -ComputerName $Server -Name 'VenioSearchService').Stop()
-                    (get-service -ComputerName $Server -Name 'VenioSearchService').WaitForStatus('Stopped')
-                    Write-Host (get-service -ComputerName $Server -Name 'VenioSearchService').Status
-                    # 1. close the distributed service executable
-                    Write-Warning ("Closing VenioSearchService processes on "+$Server+"")
-                    $proc = Get-Process -ComputerName $Server
-                    while ($proc.Name -contains 'VenioSearchService'){
-                    (Get-WmiObject Win32_Process -ComputerName $Server | ?{ $_.ProcessName -like "*VenioSearch*" }).Terminate()
+                # 3. Start Distributed Service
+                (get-service -ComputerName $Using:Server -Name 'VenioDistributedService').Start()
+                (get-service -ComputerName $Using:Server -Name 'VenioDistributedService').WaitForStatus('Running')
+                 Write-Host "$Using:Server VenioDistributedService [RUNNING]"
+             } # End InlineScript
+        }
+        #>
+        # Check for existence of the venio search service, and stop if found
+        if ($SearchServiceExists){
+            "Search Service Detected on $Server"
+            InlineScript {
+                Write-Host "$Using:Server VenioSearchService [STOPPING]"
+                (get-service -ComputerName $Using:Server -Name 'VenioSearchService').Stop()
+                (get-service -ComputerName $Using:Server -Name 'VenioSearchService').WaitForStatus('Stopped')
+                Write-Host "$Using:Server VenioSearchService [STOPPED]"
+                # 1. close the distributed service executable
+                $proc = (Get-WmiObject Win32_Process -ComputerName $Using:Server)
+                while ($proc.Name -contains 'VenioSearchService'){
+                    (Get-WmiObject Win32_Process -ComputerName $Using:Server | ?{ $_.ProcessName -like "*VenioSearch*" }).Terminate()
                     Start-Sleep -Seconds 1
-                    $proc = Get-Process -ComputerName $Server
-                    }Write-host 'Closed'
-                    #start the search service
-                    Write-Warning ("Starting VenioSearchService on "+$Server+"")
-                    (get-service -ComputerName $Server -Name 'VenioSearchService').Start()
-                    (get-service -ComputerName $Server -Name 'VenioSearchService').WaitForStatus('Running')
-                    Write-Host (get-service -ComputerName $Server -Name 'VenioSearchService').Status
-                    Write-Host "SUCCESS: Venio Search Service is now running on $Server $OFS" -BackgroundColor Green -ForegroundColor Black
+                    $proc = (Get-WmiObject Win32_Process -ComputerName $Using:Server)
                 }
-
-                # Do stuff on the RDS 
-                if ($FPRProcExists){<# Do stuff on the RDS #>}                
+                #start the search service
+                (get-service -ComputerName $Using:Server -Name 'VenioSearchService').Start()
+                (get-service -ComputerName $Using:Server -Name 'VenioSearchService').WaitForStatus('Running')
+                Write-Host "$Using:Server VenioSearchService [RUNNING]"
             }
         }
+
+        # Do stuff on the RDS 
+        if ($FPRProcExists){
+                "FPR Detected on $Server"}
+
+        # else{Restart-Computer -PSComputerName $server -Force} # Do stuff on every worker except the RDS            
     }
-}}
-
-
-
-
-
+    } # END Workflow definition
+    
+    # execute workflow
+    Workflow-VenioServers -tbl_ds_ServerDetail_Hostname $tbl_ds_ServerDetail_Hostname
+    
+} # End function definition
