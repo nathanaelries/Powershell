@@ -40,7 +40,7 @@ function Restart-VenioDistributedServices{
 
     # Define query for getting information for each venio project database
     $DatabaseInstanceNameQuery = 'SELECT ProjectName, DatabaseInstanceName, @@servername as ServerInstance, DB_NAME() AS [PCD] FROM [dbo].[tbl_pj_ProjectSetup]'
-    
+       
     # Find all databases on the server(s) with "PCD" in the database name
     $PCDInstanceName = Foreach($Server in $SQLServers){
         [System.Management.Automation.PSObject]$SQL_Service = $null
@@ -68,7 +68,7 @@ function Restart-VenioDistributedServices{
             }}}}
                    
     # Output the unique names of the RDS and workers found
-    $tbl_ds_ServerDetail_Hostname = ($tbl_ds_ServerDetail.Hostname | Sort-Object -Unique)
+    $tbl_ds_ServerDetail_Hostname = ($tbl_ds_ServerDetail.foreach({ <# Use the FQDN to alleviate issues and remove duplicates #> [System.Net.Dns]::GetHostByName($_.Hostname)}).HostName | Sort-Object -Unique)
     Write-Host $tbl_ds_ServerDetail_Hostname
     
     workflow Workflow-VenioServers {
@@ -122,8 +122,6 @@ function Restart-VenioDistributedServices{
             InlineScript {
                 Write-Host "$Using:Server VenioSearchService [STOPPING]"
                 (get-service -ComputerName $Using:Server -Name 'VenioSearchService').Stop()
-                (get-service -ComputerName $Using:Server -Name 'VenioSearchService').WaitForStatus('Stopped')
-                Write-Host "$Using:Server VenioSearchService [STOPPED]"
                 # 1. close the distributed service executable
                 $proc = (Get-WmiObject Win32_Process -ComputerName $Using:Server)
                 while ($proc.Name -contains 'VenioSearchService'){
@@ -131,6 +129,9 @@ function Restart-VenioDistributedServices{
                     Start-Sleep -Seconds 1
                     $proc = (Get-WmiObject Win32_Process -ComputerName $Using:Server)
                 }
+                (get-service -ComputerName $Using:Server -Name 'VenioSearchService').WaitForStatus('Stopped')
+                Write-Host "$Using:Server VenioSearchService [STOPPED]"
+                
                 #start the search service
                 (get-service -ComputerName $Using:Server -Name 'VenioSearchService').Start()
                 (get-service -ComputerName $Using:Server -Name 'VenioSearchService').WaitForStatus('Running')
@@ -150,3 +151,6 @@ function Restart-VenioDistributedServices{
     Workflow-VenioServers -tbl_ds_ServerDetail_Hostname $tbl_ds_ServerDetail_Hostname
     
 } # End function definition
+
+
+
