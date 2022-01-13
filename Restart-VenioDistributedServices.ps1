@@ -40,16 +40,21 @@ function Restart-VenioDistributedServices{
 
     # Define query for getting information for each venio project database
     $DatabaseInstanceNameQuery = 'SELECT ProjectName, DatabaseInstanceName, @@servername as ServerInstance, DB_NAME() AS [PCD] FROM [dbo].[tbl_pj_ProjectSetup]'
-       
+    
     # Find all databases on the server(s) with "PCD" in the database name
     $PCDInstanceName = Foreach($Server in $SQLServers){
-        (Get-WmiObject -Query "select * from win32_service where PathName like '%%sqlservr.exe%%'" -ComputerName $Server).foreach{
-            $_ | Add-Member -NotePropertyName Server -NotePropertyValue $Server
-        
+        [System.Management.Automation.PSObject]$SQL_Service = $null
+        [System.Management.Automation.PSObject]$SQL_Service = (Get-WmiObject -Query "select * from win32_service where PathName like '%%sqlservr.exe%%'" -ComputerName $Server)
+        Foreach($Service in $SQL_Service){
+            $Service | Add-Member -NotePropertyName Server -NotePropertyValue $Server
             if($Credential -ne [System.Management.Automation.PSCredential]::Empty) {
-                $Results = Invoke-Sqlcmd -Query "Select @@servername as ServerInstance, name as PCD from Sys.Databases WHERE name like '%PCD%'" -ServerInstance ($_.Server+'\'+$_.DisplayName -replace "SQL Server \(" -replace'\)') -ErrorAction SilentlyContinue -ErrorVariable NoProjectSetupTable -Credential $Credential
+                try{
+                $Results = Invoke-Sqlcmd -DisableVariables -Query "Select @@servername as ServerInstance, name as PCD from Sys.Databases WHERE name like '%PCD%'" -ServerInstance ($Service.Server+'\'+$Service.DisplayName -replace "SQL Server \(" -replace'\)') -ErrorAction SilentlyContinue -ErrorVariable NoProjectSetupTable -Credential $Credential
+                }catch{}
             } else {
-                $Results = Invoke-Sqlcmd -Query "Select @@servername as ServerInstance, name as PCD from Sys.Databases WHERE name like '%PCD%'" -ServerInstance ($_.Server+'\'+$_.DisplayName -replace "SQL Server \(" -replace'\)') -ErrorAction SilentlyContinue -ErrorVariable NoProjectSetupTable 
+                try{
+                $Results = Invoke-Sqlcmd -DisableVariables -Query "Select @@servername as ServerInstance, name as PCD from Sys.Databases WHERE name like '%PCD%'" -ServerInstance ($Service.Server+'\'+$Service.DisplayName -replace "SQL Server \(" -replace'\)') -ErrorAction SilentlyContinue -ErrorVariable NoProjectSetupTable 
+                }catch{}
             }
             if ($NoProjectSetupTable){<# Nothing to do here, database Does not appear to contain a ProjectSetup table"#>
             } else {
@@ -57,7 +62,7 @@ function Restart-VenioDistributedServices{
                 # Find all workers in each PCD
                 foreach($Result in $Results){
                 $temp_tbl_ds_ServerDetail = $null
-                $temp_tbl_ds_ServerDetail = Invoke-Sqlcmd -ServerInstance $Result.ServerInstance -Database $Result.PCD -Query 'SELECT DISTINCT [Hostname],[Application] FROM [tbl_sys_ComponentVersionInfo] with (NOLOCK) where [LoggedDate]  >=  (getdate()-366)' -ErrorAction SilentlyContinue -ErrorVariable NoServerDetailTable -QueryTimeout 65534
+                $temp_tbl_ds_ServerDetail = Invoke-Sqlcmd -DisableVariables -ServerInstance $Result.ServerInstance -Database $Result.PCD -Query 'SELECT DISTINCT [Hostname],[Application] FROM [tbl_sys_ComponentVersionInfo] with (NOLOCK) where [LoggedDate]  >=  (getdate()-366)' -ErrorAction SilentlyContinue -ErrorVariable NoServerDetailTable -QueryTimeout 65534
                 # only add server details for environment matching the RDS specified by the user 
             if($temp_tbl_ds_ServerDetail.Hostname -contains $VenioRDS){$tbl_ds_ServerDetail += $temp_tbl_ds_ServerDetail}
             }}}}
@@ -91,16 +96,19 @@ function Restart-VenioDistributedServices{
             
             InlineScript {
                 Write-Host "$Using:Server VenioDistributedService [STOPPING]"
+                # send the command to stop the service
                 (get-service -ComputerName $Using:Server -Name 'VenioDistributedService').Stop()
-                (get-service -ComputerName $Using:Server -Name 'VenioDistributedService').WaitForStatus('Stopped')
-                Write-Host "$Using:Server VenioDistributedService [STOPPED]"
-                # 1. close the distributed service executable
+                # Force close the distributed service executable
                 $proc = (Get-WmiObject Win32_Process -ComputerName $Using:Server)
                 while ($proc.Name -contains 'VenioDistributedService'){
                     (Get-WmiObject Win32_Process -ComputerName $Using:Server | ?{ $_.ProcessName -like "*DistributedService*" }).Terminate()
                     Start-Sleep -Seconds 1
                     $proc = (Get-WmiObject Win32_Process -ComputerName $Using:Server)             
                 }
+                # Wait until service is stopped
+                (get-service -ComputerName $Using:Server -Name 'VenioDistributedService').WaitForStatus('Stopped')
+                Write-Host "$Using:Server VenioDistributedService [STOPPED]"
+
                 # 3. Start Distributed Service
                 (get-service -ComputerName $Using:Server -Name 'VenioDistributedService').Start()
                 (get-service -ComputerName $Using:Server -Name 'VenioDistributedService').WaitForStatus('Running')
