@@ -125,14 +125,14 @@ function Copy-VenioInstaller{
 
             # Create folders
             foreach($folder in (gci $NetworkPath -Recurse -Directory).FullName){
-                New-Item -Path \\$Server\c$\Venio\9.4\ -Name ($folder -replace '\\\\invrel.local\\data\\_DSI_Data\\NAFS\\Clients\\vol_Venio\\INSTALL\\9_4\\') -ItemType Directory
+                New-Item -Path \\$Server\c$\Venio\9.4\ -Name ($folder.replace($NetworkPath)) -ItemType Directory
             }
             
             # Copy files in read-only mode
             foreach($file in (gci $NetworkPath -File -Recurse).FullName){
                
                 $sourcePath = (gci ($file)).fullname
-                $dest = ("\\$Server\c$\Venio\9.4\"+ ($sourcePath -replace '\\\\invrel.local\\data\\_DSI_Data\\NAFS\\Clients\\vol_Venio\\INSTALL\\9_4\\'))
+                $dest = ("\\$Server\c$\Venio\9.4\"+ ($sourcePath.replace($NetworkPath))
                 InlineScript {Write-Host "$using:sourcePath | $using:dest"}
                 Copy-ReadOnly -Path $sourcePath -Destination $dest
 
