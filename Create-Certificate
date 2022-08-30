@@ -1,0 +1,50 @@
+function Create-Certificate{
+<#
+    .SYNOPSIS
+        Create-Certificate is a powershell function to assist in creating self-signed certificates.
+    .DESCRIPTION
+       Create-Certificate is a powershell function to assist in creating self-signed certificates.
+        It has one required parameter (switch): -n
+    .PARAMETER n
+        Specifies a root certificate name. Input must be a string.
+        If a root certificate has the same name, the script creates a new client certificate only.
+        If a root certificate does not exist as that name, the script creates both the root and client certificates.
+    .EXAMPLE
+        PS C:\> Create-Certificate -n "<YOUR_CertName>"
+#>
+Param(
+[Parameter(Mandatory=$true)]
+[ValidateNotNullOrEmpty()]
+[String[]]$n
+)
+
+# Check for existing cert name
+$cert = (Get-ChildItem -Path “Cert:\CurrentUser\My” | Where-Object {$_.Subject -eq "CN=$n"})
+
+# Only makes a new root cert if one is not found matching the name provided
+if ($cert -eq $null) {
+    Write-Warning "$n root certificate not found. Creating new root certificate $n"
+    # Create a root certificate 
+    $cert = New-SelfSignedCertificate -Type Custom -KeySpec Signature `
+    -Subject “CN=$n” -KeyExportPolicy Exportable `
+    -HashAlgorithm sha256 -KeyLength 2048 `
+    -CertStoreLocation “Cert:\CurrentUser\My” -KeyUsageProperty Sign -KeyUsage CertSign
+}
+
+$Thumbprint = (Get-ChildItem -Path “Cert:\CurrentUser\My” | Where-Object {$_.Subject -eq "CN=$n"}).Thumbprint;
+Write-Host -Object "Root Certificate $n thumbprint is: $Thumbprint";
+
+$cert = Get-ChildItem -Path “Cert:\CurrentUser\My\$Thumbprint”
+
+start-sleep -Seconds 1
+$dtstring = [System.DateTime]::Now.ToString("yyyyMMddhhmmss")
+
+Creating "CN=$n-CLientCert-$dtstring”
+Write-Host "Creating CN=$n-CLientCert-$dtstring”
+New-SelfSignedCertificate -Type Custom -KeySpec Signature `
+-Subject “CN=$n-ClientCert-$dtstring” -KeyExportPolicy Exportable -NotAfter (Get-Date).AddYears(1) `
+-HashAlgorithm sha256 -KeyLength 2048 `
+-CertStoreLocation “Cert:\CurrentUser\My” `
+-Signer $cert -TextExtension @(“2.5.29.37={text}1.3.6.1.5.5.7.3.2”)
+
+}
